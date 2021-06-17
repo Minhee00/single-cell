@@ -1,0 +1,57 @@
+library(Seurat)
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+
+'/mhk/Downloads/data'
+data <- readRDS('UMI_matrix.rds')
+t_data <- data[,1:100000]
+
+#count cell 1-100000
+#setup the seurat object
+t_data <- CreateSeuratObject(counts = t_data, project = "lung", min.cells = 3, min.features = 200)
+
+#QC
+t_data[["percent.mt"]] <- PercentageFeatureSet(t_data, pattern = "^MT-")
+VlnPlot(t_data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+plot1 <- FeatureScatter(t_data, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t_data, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+t_data <- subset(t_data, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+
+#Normalized
+t_data <- NormalizeData(t_data, normalization.method = "LogNormalize", scale.factor = 10000)
+
+#highly variable feature
+t_data <- FindVariableFeatures(t_data, selection.method = "vst", nfeatures = 2000)
+plot1 <- VariableFeaturePlot(t_data)
+plot1
+
+#scaling data
+all.genes <- rownames(t_data)
+t_data <- ScaleData(t_data, features = all.genes)
+
+#PCA
+t_data <- RunPCA(t_data, features = VariableFeatures(object = t_data))
+VizDimLoadings(t_data, dims = 1:2, reduction = "pca")
+DimPlot(t_data, reduction = "pca")
+DimHeatmap(t_data, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(t_data, dims = 1:15, cells = 500, balanced = TRUE)
+
+#dimensionality
+t_data <- JackStraw(t_data, num.replicate = 100)
+t_data <- ScoreJackStraw(t_data, dims = 1:20)
+JackStrawPlot(t_data, dims = 1:20)
+ElbowPlot(t_data)
+
+#cluster
+t_data <- FindNeighbors(t_data, dims = 1:15)
+t_data <- FindClusters(t_data, resolution = 0.1)
+
+#UMAP
+t_data <- RunUMAP(t_data, dims = 1:15)
+DimPlot(t_data, reduction = "umap")
+saveRDS(t_data, file = "/mhk/Downloads/data/single_cell_t.rds")
+
+data_t <- RDS('single_cell_t.rds')
+
