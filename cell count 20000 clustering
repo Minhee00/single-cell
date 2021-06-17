@@ -1,0 +1,72 @@
+library(Seurat)
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+
+#count cell 1-20000
+'/mhk/Downloads/data'
+data <- readRDS('UMI_matrix.rds')
+h_data <- data[,1:20000]
+
+#setup the seurat object
+data <- CreateSeuratObject(counts = h_data, project = "lung", min.cells = 3, min.features = 200)
+
+#QC
+data[["percent.mt"]] <- PercentageFeatureSet(data, pattern = "^MT-")
+VlnPlot(data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+plot1 <- FeatureScatter(data, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(data, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+data <- subset(data, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+
+#Normalized
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000)
+
+#highly variable feature
+data <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 2000)
+plot1 <- VariableFeaturePlot(data)
+plot1
+
+#scaling data
+all.genes <- rownames(data)
+data <- ScaleData(data, features = all.genes)
+
+#PCA
+data <- RunPCA(data, features = VariableFeatures(object = data))
+VizDimLoadings(data, dims = 1:2, reduction = "pca")
+DimPlot(data, reduction = "pca")
+DimHeatmap(data, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(data, dims = 1:15, cells = 500, balanced = TRUE)
+
+#dimensionality
+data <- JackStraw(data, num.replicate = 100)
+data <- ScoreJackStraw(data, dims = 1:20)
+JackStrawPlot(data, dims = 1:15)
+ElbowPlot(data)
+
+#cluster
+data <- FindNeighbors(data, dims = 1:10)
+data <- FindClusters(data, resolution = 0.1)
+
+#UMAP
+data <- RunUMAP(data, dims = 1:10)
+DimPlot(data, reduction = "umap")
+saveRDS(data, file = "../single_cell.rds")
+
+data <- readRDS('single_cell.rds')
+
+#cluster biomarker
+cluster2.markers <- FindMarkers(data, ident.1 = 2, min.pct = 0.25)
+cluster5.markers <- FindMarkers(data, ident.1 = 5, ident.2 = c(0, 3), min.pct = 0.25)
+data.markers <- FindAllMarkers(data, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+data.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_log2FC)
+cluster0.markers <- FindMarkers(data, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE)
+VlnPlot(data, features = c('LUM','IGFBP7','A2M'))
+FeaturePlot(data, features = c('MOG',"KLRD1", "MS4A1", "TYROBP", "EPCAM", "DCN", "MS4A2", 'PECAM1', "NCAM1"))
+top10 <- data.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+DoHeatmap(data, features = top10$gene) + NoLegend()
+new.cluster.ids <- c('NK', "T", "B", "Myeloid", "Epithelial", "Fibroblast", "Mast", 'Endothelial', "Oligodendrocyte")
+names(new.cluster.ids) <- levels(data)
+data <- RenameIdents(data, new.cluster.ids)
+DimPlot(data, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+saveRDS(data, file = "../data/single_cell_final.rds")
