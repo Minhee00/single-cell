@@ -1,0 +1,43 @@
+'mhk/Downloads/data'
+clinical <- read.delim('clinical_data.tsv',header=T)
+library(survival)
+library(ranger)
+devtools::install_github("imbs-hl/ranger")
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+library(devtools)
+install_github('sinhrks/ggfortify')
+library(openxlsx)
+
+write.xlsx(clinical,sheetNames='sheet1',file='clinical_data.xlsx')
+clinical_t <- read.xlsx('clinical_data_t.xlsx')
+
+#total overall
+a <- as.numeric(unlist(clinical_t$Overall.Survival..Months.))
+b <- as.numeric(unlist(clinical_t$Overall.Survival.Status))
+clinical_f <- data.frame(a,b)
+colnames(clinical_f)[1] = "months"
+colnames(clinical_f)[2] = 'status'
+km <- with(clinical_f, Surv(months, status))
+head(km,80)
+km_fit = survfit(Surv(months, status)~1, data=clinical_f)
+plot(km_fit, ylab="Survival", xlab="Days", mark.time=T)
+
+#sex dependent
+require("survival")
+c <- clinical_t[,24]
+clinical_s <- data.frame(clinical_f,c)
+colnames(clinical_s)[3] = "sex"
+sex = survfit(Surv(months, status==1)~sex, data=clinical_s)
+plot(sex, ylab="Survival", xlab="Days", col=c("red","blue"), lty=1:2, mark.time=T)
+legend("topright", legend=c("female", "male"), col=c("red","blue"), lty=1:2)
+
+#age dependent
+d <- clinical_t[,4]
+clinical_a <- data.frame(clinical_s,d)
+colnames(clinical_a)[4] = "age"
+age_group <- ifelse(clinical_a$age<70,0,1)
+age = survfit(Surv(months, status==1)~age_group, data=clinical_a)
+plot(age, ylab="Survival", xlab="Days", col=1:2, lty=1:2, mark.time=T)
+legend("topright", legend=c("age<70","age>=70"), col=1:2, lty=1:2)
